@@ -1,0 +1,10 @@
+.project
+.idea
+*.iml
+docker-auth-plugin
+coverage.html
+
+#build_rpm
+
+
+#!build_rpm/CMakeLists.txt
