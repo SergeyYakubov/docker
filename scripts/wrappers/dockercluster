@@ -1,0 +1,80 @@
+#!/bin/bash
+
+set -e
+set -a
+
+. /etc/profile.d/docker.sh
+
+
+
+DOCKER_SSHPORT=2022
+DOCKER_NAME=docker_$SLURM_JOB_ID
+
+usage() { echo "Usage: $0 [-p <port>] [-s] [-u] [-n <Container name>] <Docker image name>" 1>&2; exit 1; }
+
+while getopts "p:hn:su" opt; do
+  case $opt in
+    p)
+      DOCKER_SSHPORT=$OPTARG
+      ;;
+    s)
+      ACTION="STOP"
+      ;;
+    u)
+      DOCKER_UPDATE="TRUE"
+      ;;
+    n)
+      DOCKER_NAME=$OPTARG
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      exit 1
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      exit 1
+      ;;
+    h)
+      usage
+      exit 0
+      ;;
+  esac
+done
+
+shift $((OPTIND-1))
+
+
+DOCKER_IMAGENAME=$1
+
+if [ "$ACTION" == "STOP" ]; then
+	srun  --ntasks=$SLURM_NNODES --ntasks-per-node=1 docker rm -f $DOCKER_NAME >/dev/null
+    	exit 0
+fi
+
+if [ -z "$DOCKER_IMAGENAME" ]; then
+    usage
+    exit
+fi
+
+
+
+
+DOCKER_HOSTFILE=`slurm_make_hostfile` 
+
+KEYS_DIR=/data/netapp/docker/tmp/keys_$SLURM_JOB_ID
+rm -rf $KEYS_DIR
+mkdir $KEYS_DIR 
+ssh-keygen -t rsa -f $KEYS_DIR/id_rsa -N '' > /dev/null 
+
+module load mpi/openmpi-x86_64 >/dev/null 2>&1
+
+if [ -n $DOCKER_UPDATE ]; then
+	mpirun --map-by node -n $SLURM_NNODES  \
+        	docker pull $DOCKER_IMAGENAME >/dev/null
+fi
+
+mpirun --map-by node -n $SLURM_NNODES  \
+        -x  KEYS_DIR -x DOCKER_SSHPORT -x DOCKER_HOSTFILE \
+        dockerrun -start-ssh --name $DOCKER_NAME ${@:2} $1
+rm -rf $KEYS_DIR/*
+

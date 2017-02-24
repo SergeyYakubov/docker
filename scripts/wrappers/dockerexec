@@ -1,0 +1,10 @@
+#!/bin/bash
+
+. /etc/profile.d/docker.sh
+
+if [ -z $DOCKER_CONT_NAME ]; then
+        DOCKER_CONT_NAME=docker_$SLURM_JOB_ID
+fi
+
+docker exec -t -u `id -u $SLURM_JOB_USER`:`id -g $SLURM_JOB_USER` $DOCKER_CONT_NAME "$@"
+

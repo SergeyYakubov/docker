@@ -1,0 +1,24 @@
+#!/bin/bash
+
+if [ -z "$1" ];then
+dir=/data/netapp/docker/tmp
+fi
+
+mkdir -p $dir >/dev/null 2>&1
+
+
+tmphosts=$dir/tmp_hosts_$SLURM_JOB_ID
+hosts=$dir/hosts_$SLURM_JOB_ID
+
+rm -f $tmphosts $hosts
+srun hostname >> $tmphosts || exit 1
+
+cat $tmphosts | sort | uniq -c | while read machine
+do
+ nslots=`echo $machine | awk '{ print $1 }'`
+ nodename=`echo $machine | awk '{ print $2 }'`
+ echo $nodename slots=$nslots max-slots=$nslots>> $hosts
+ (( nnode += 1 ))
+done
+rm $tmphosts
+echo $hosts

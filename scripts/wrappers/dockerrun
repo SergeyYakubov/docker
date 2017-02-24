@@ -1,0 +1,93 @@
+#!/bin/bash
+
+. /etc/profile.d/docker.sh
+
+
+function wait_sshd()
+{
+    sleep 0.5
+   `netstat -tulpn 2> /dev/null | grep LISTEN | grep :::$1 | grep sshd >/dev/null 2>&1` && return 0
+    ntry=3
+    sleepint=5
+    for i in `seq 1 $ntry`
+    do
+      echo "do not see sshd (port $1), try $i of $ntry..."
+      sleep $sleepint
+      `netstat -tulpn 2>/dev/null | grep LISTEN | grep :::$1 | grep sshd >/dev/null 2>&1` && return 0
+    done
+    return 1
+}
+
+
+MYGROUPS=`id| cut -d "=" -f 4`
+
+mkdir /tmp/docker >/dev/null 2>&1
+
+PASSWDFILE=/tmp/docker/passwd_${USER}_${SLURM_JOB_ID}
+GROUPFILE=/tmp/docker/group_${USER}_${SLURM_JOB_ID}
+
+rm -f $PASSWDFILE $GROUPFILE
+
+GROUP=`id -g`
+echo "$USER:x:$UID:$GROUP:$USER,,,:/tmp/$USER:/bin/bash" >> $PASSWDFILE
+GROUPADD=""
+for i in $(echo $MYGROUPS | tr "," "\n")
+do
+        ID=`echo $i | cut -d "(" -f1`
+        NAME=`echo $i | cut -d "(" -f2 | cut -d ")" -f1`
+	GROUPADD="$GROUPADD --group-add $ID"
+        echo "$NAME:x:$ID:$USER" >> $GROUPFILE
+done
+ARGS="-v $PASSWDFILE:/etc/passwd -v $GROUPFILE:/etc/group -v `pwd`:/docker_pwd -w /docker_pwd \
+-v /etc/docker/entrypoints/:/entry --userns=host --net=host -e SHELL=/bin/bash \
+--security-opt no-new-privileges --privileged -u `id -u`:`id -g` $GROUPADD"
+
+case $1 in
+	-help|--help)
+		echo $"Usage: $0 [-start-ssh|-no-add-user] <docker run arguments>"
+		exit 0
+		;;
+	-start-ssh)
+		if [[ ! -d "$KEYS_DIR" ]] || [[ "$KEYS_DIR" != /* ]]; then
+			echo "wrong keys dir"
+			exit 1
+		fi
+		if [[ -z "$DOCKER_SSHPORT" ]]; then
+			echo "DOCKER_SSHPORT not set"
+			exit 1
+		fi
+
+		if [[ -z "$DOCKER_HOSTFILE" ]]; then
+			echo "DOCKER_HOSTFILE not set"
+			exit 1
+		fi
+		ARGS="$ARGS -d -v $KEYS_DIR:/ssh_keys --entrypoint /entry/startsshd.sh \
+		-v $DOCKER_HOSTFILE:/usr/lib64/openmpi/etc/openmpi-default-hostfile \
+		-v $DOCKER_HOSTFILE:/etc/openmpi-x86_64/openmpi-default-hostfile \
+		-p $DOCKER_SSHPORT:$DOCKER_SSHPORT -e DOCKER_SSHPORT=$DOCKER_SSHPORT"
+		userargs="${@:2}"
+		SSH=1
+		;;
+        -no-add-user)
+          	ARGS="-u `id -u`:`id -g` --privileged --net=host --userns=host --security-opt no-new-privileges $GROUPADD"
+		userargs="${@:2}"
+		;;
+
+	*)
+		ARGS="$ARGS --entrypoint /entry/adduser.sh"
+		userargs="$@"
+		;;
+esac
+
+
+if [[ $SSH == "1" ]]; then
+    docker run $ARGS $userargs >/dev/null
+    wait_sshd $DOCKER_SSHPORT
+else
+    docker run $ARGS $userargs
+fi
+
+exit $?
+
+
+
