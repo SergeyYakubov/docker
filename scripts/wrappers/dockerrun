@@ -22,11 +22,19 @@ function wait_sshd()
 MYGROUPS=`id| cut -d "=" -f 4`
 
 mkdir /tmp/docker >/dev/null 2>&1
+chmod og+wx /tmp/docker >/dev/null 2>&1
 
-PASSWDFILE=/tmp/docker/passwd_${USER}_${SLURM_JOB_ID}
-GROUPFILE=/tmp/docker/group_${USER}_${SLURM_JOB_ID}
+BASEDIR=/tmp/docker/${USER}
 
-rm -f $PASSWDFILE $GROUPFILE
+mkdir $BASEDIR >/dev/null 2>&1
+chmod 700 $BASEDIR >/dev/null 2>&1
+
+HOMEDIR=$BASEDIR/home_${SLURM_JOB_ID}
+
+PASSWDFILE=$BASEDIR/passwd_${SLURM_JOB_ID}
+GROUPFILE=$BASEDIR/group_${SLURM_JOB_ID}
+
+mkdir -p $HOMEDIR
 
 GROUP=`id -g`
 echo "$USER:x:$UID:$GROUP:$USER,,,:/tmp/$USER:/bin/bash" >> $PASSWDFILE
@@ -74,7 +82,7 @@ case $1 in
 		;;
 
 	*)
-		ARGS="$ARGS --entrypoint /entry/adduser.sh"
+		ARGS="$ARGS -v $HOMEDIR:/tmp/${USER}"
 		userargs="$@"
 		;;
 esac
@@ -87,7 +95,9 @@ else
     docker run $ARGS $userargs
 fi
 
-exit $?
+code=$?
+
+exit $code
 
 
 
